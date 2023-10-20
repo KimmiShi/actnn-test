@@ -14,14 +14,20 @@ from copy import copy
 try:
     # from apex.parallel import DistributedDataParallel as DDP
     from torch.nn.parallel import DistributedDataParallel as DDP
-    from apex.fp16_utils import *
-    from apex import amp
+    # from apex.fp16_utils import *
+    # from apex import amp
 except ImportError:
     raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this example.")
 
 
 MB = 1024**2
 GB = 1024**3
+
+def to_python_float(t):
+    if hasattr(t, 'item'):
+        return t.item()
+    else:
+        return t[0]
 
 class ModelAndLoss(nn.Module):
     def __init__(self, arch, num_classes, loss, pretrained_weights=None, cuda=True, fp16=False):
@@ -187,7 +193,9 @@ def get_train_step(model_and_loss, optimizer, fp16, use_amp = False, batch_size_
             init_mem = get_memory_usage(True)
             exp_recorder.record("data_loader", init_mem / GB - exp_recorder.val_dict['model_only'], 2)
 
+        mem1=torch.cuda.memory_allocated()
         loss, output = model_and_loss(input_var, target_var)
+        # print("act mem: (MB)", (torch.cuda.memory_allocated()-mem1)/1e6)
         prec1, prec5 = torch.zeros(1), torch.zeros(1) #utils.accuracy(output.data, target, topk=(1, 5))
 
         if torch.distributed.is_initialized():
@@ -227,7 +235,7 @@ def get_train_step(model_and_loss, optimizer, fp16, use_amp = False, batch_size_
             loss.backward()
 
         if optimizer_step:
-            opt = optimizer.optimizer if isinstance(optimizer, FP16_Optimizer) else optimizer
+            opt = optimizer
             for param_group in opt.param_groups:
                 for param in param_group['params']:
                     param.grad /= batch_size_multiplier

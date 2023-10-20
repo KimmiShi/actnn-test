@@ -48,17 +48,17 @@ class QScheme(object):
         if QScheme.update_scale:
             if config.use_gradient:
                 assert QScheme.batch is not None
-                scale = grad.view(grad.shape[0], -1).float().norm(dim=1).square().cpu()
+                scale = grad.reshape(grad.shape[0], -1).float().norm(dim=1).square().cpu()
                 self.scales[QScheme.batch] = self.scales[QScheme.batch] * 0.5 + scale * 0.5
             else:
-                scale = grad.view(grad.shape[0], -1).float().norm(dim=1).square()
+                scale = grad.reshape(grad.shape[0], -1).float().norm(dim=1).square()
                 self.scales = scale.mean()
 
     def compute_quantization_bits(self, input):
         QScheme.prev_layer = self
         N = input.shape[0]
         D = input.shape[1]
-        input_flatten = input.view(N, -1)
+        input_flatten = input.reshape(N, -1)
         num_features = input_flatten.shape[1]
         num_pixels = num_features // D
 
@@ -70,14 +70,14 @@ class QScheme(object):
             input_flatten = torch.cat([input_flatten,
                                        torch.zeros([N, delta], dtype=input.dtype, device=input.device)], 1)
 
-        input_groups = input_flatten.view(-1, config.group_size)    # [-1, group_size]
+        input_groups = input_flatten.reshape(-1, config.group_size)    # [-1, group_size]
         mn, mx = ext_minimax.minimax(input_groups)
         if not config.pergroup:    # No per group quantization
             mn = torch.ones_like(mn) * mn.min()
             mx = torch.ones_like(mx) * mx.max()
 
         # Average range over pixels     G * ||R_n||^2 / I
-        Range_sqr = torch.norm((mx - mn).view(N, -1), dim=1).float().square() * (config.group_size / num_pixels)
+        Range_sqr = torch.norm((mx - mn).reshape(N, -1), dim=1).float().square() * (config.group_size / num_pixels)
 
         # greedy
         grad_sum = self.get_scale().cuda()
@@ -91,7 +91,7 @@ class QScheme(object):
         self.dim = input.numel() // N
         self.b = b
 
-        return input_groups.view(N, -1, config.group_size), b.cuda(), mn.view(N, -1, 1), mx.view(N, -1, 1)
+        return input_groups.reshape(N, -1, config.group_size), b.cuda(), mn.reshape(N, -1, 1), mx.reshape(N, -1, 1)
 
     @staticmethod
     def allocate_perlayer():

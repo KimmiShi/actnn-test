@@ -13,8 +13,8 @@ from actnn import config, QScheme, QModule
 try:
     # from apex.parallel import DistributedDataParallel as DDP
     from torch.nn.parallel import DistributedDataParallel as DDP
-    from apex.fp16_utils import *
-    from apex import amp
+    # from apex.fp16_utils import *
+    # from apex import amp
 except ImportError:
     raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this example.")
 
@@ -332,8 +332,8 @@ def main(args):
 
     if args.amp:
         model_and_loss, optimizer = amp.initialize(
-                model_and_loss, optimizer, 
-                opt_level="O2", 
+                model_and_loss, optimizer,
+                opt_level="O2",
                 loss_scale="dynamic" if args.dynamic_loss_scale else args.static_loss_scale)
 
     if args.distributed:

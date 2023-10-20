@@ -99,7 +99,8 @@ def set_optimization_level(args):
 def main():
     args = parser.parse_args()
 
-    set_optimization_level(args)
+    # set_optimization_level(args)
+    actnn.set_optimization_level("L3")
     QScheme.num_samples = 1300000   # the size of training set
 
     if args.seed is not None:

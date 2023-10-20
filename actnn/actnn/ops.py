@@ -76,10 +76,10 @@ def dequantize_and_unpack(data, shape, bits, scale, mn):
 
 def no_scheme_compute_quantization_bits(input):
     N = input.shape[0]
-    D = input.shape[1]
-    input_flatten = input.view(N, -1)
+    # D = input.shape[1]
+    input_flatten = input.reshape(N, -1)
     num_features = input_flatten.shape[1]
-    num_pixels = num_features // D
+    # num_pixels = num_features // D
 
     # Compute min, max by groups
     if num_features % config.group_size != 0:
@@ -89,8 +89,15 @@ def no_scheme_compute_quantization_bits(input):
         input_flatten = torch.cat([input_flatten,
                                    torch.zeros([N, delta], dtype=input.dtype, device=input.device)], 1)
 
-    input_groups = input_flatten.view(-1, config.group_size)
-    mn, mx = ext_minimax.minimax(input_groups)
+    input_groups = input_flatten.reshape(-1, config.group_size)
+    try:
+        # mn, mx = ext_minimax.minimax(input_groups)
+        mx = torch.max(input_groups, 1).values
+        mn = torch.min(input_groups, 1).values
+        # import pdb;pdb.set_trace()
+    except:
+        import pdb;pdb.set_trace()
+        pass
 
     b = config.activation_compression_bits[0]
     return input_groups.view(N, -1, config.group_size), b, mn.view(N, -1, 1), mx.view(N, -1, 1)
@@ -133,9 +140,14 @@ def dequantize_activation(quantized, q_input_shape):
 
     # Remove padding
     N = q_input_shape[0]
-    num_features = np.prod(q_input_shape[1:])
-    input = input.view(N, -1)[:, :num_features]
-    input = input.view(*q_input_shape)
+    num_features = int(np.prod(q_input_shape[1:]))
+    try:
+        # if input.
+        input = input.view(N, -1)[:, :num_features]
+        input = input.view(*q_input_shape)
+    except:
+        import pdb;pdb.set_trace()
+        pass
     return input.contiguous()
 
 conv2d_layer_ct = 0
@@ -387,14 +399,21 @@ class linear(Function):
     @staticmethod
     def forward(ctx, input, weight, bias=None, scheme=None):
         quantized = quantize_activation(input, scheme)
-
         empty_cache(config.empty_cache_threshold)
-
+        # import pdb;pdb.set_trace()
         ctx.scheme = scheme
         ctx.saved = quantized, weight, bias
         ctx.other_args = input.shape
-
-        return F.linear(input, weight, bias)
+        print("saved size:", (input.numel()-quantized[0].numel())*4/1e6)
+        # import pdb;pdb.set_trace()
+        # with torch.no_grad():
+        # tmp = F.linear(input, weight, bias)
+        with torch.no_grad():
+            if bias is not None:
+                tmp=torch.matmul(input, weight.transpose(-1,-2)) + bias
+            else:
+                tmp=torch.matmul(input, weight.transpose(-1,-2))
+        return tmp
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -409,22 +428,26 @@ class linear(Function):
 
         empty_cache(config.empty_cache_threshold)
 
-        # TODO: the following implementation might not be optimal
-        C_in = input.shape[-1]
-        C_out = grad_output.shape[-1]
-        # rank = len(grad_output.shape)
+        grad_input = torch.matmul(grad_output, weight)
+        grad_weight = torch.matmul(grad_output.transpose(-1, -2), input)
 
-        grad_output_flatten = grad_output.view(-1, C_out)
-        input_flatten = input.view(-1, C_in)
-        # print(grad_output_flatten.shape, weight.shape)
-        grad_input = grad_output_flatten.mm(weight)
-        grad_weight = grad_output_flatten.t().mm(input_flatten)
+        # TODO: the following implementation might not be optimal
+        # C_in = input.shape[-1]
+        # C_out = grad_output.shape[-1]
+        # # rank = len(grad_output.shape)
+        # grad_output_flatten = grad_output.view(-1, C_out)
+        # input_flatten = input.view(-1, C_in)
+        # # print(grad_output_flatten.shape, weight.shape)
+        # grad_input = grad_output_flatten.mm(weight)
+        # grad_weight = grad_output_flatten.t().mm(input_flatten)
+
+        # import pdb;pdb.set_trace()
 
         # grad_input = grad_output.mm(weight)
         # grad_weight = grad_output.t().mm(input)
         if bias is not None:
             # grad_bias = grad_output.sum(0)
-            grad_bias = grad_output_flatten.sum(0)
+            grad_bias = grad_output.sum(-2)
         else:
             grad_bias = None
 
